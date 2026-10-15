@@ -25,6 +25,28 @@ MAX_CHARS = 30_000  # resume text sent to the model (keeps cost and latency low)
 MIN_CHARS = 200  # below this we assume the file has no readable text
 
 
+REQUIRED = {  # import name -> pip package name
+    "docx": "python-docx",
+    "pypdf": "pypdf",
+    "google.genai": "google-genai",
+}
+
+
+def missing_packages() -> list:
+    """Return pip names of every required package that is not installed."""
+    import importlib.util
+
+    missing = []
+    for module, pip_name in REQUIRED.items():
+        try:
+            found = importlib.util.find_spec(module) is not None
+        except (ImportError, ValueError):  # parent package (e.g. `google`) absent
+            found = False
+        if not found:
+            missing.append(pip_name)
+    return missing
+
+
 MISSING_DEPS_MSG = (
     "A required package is not installed ({err}). Make sure `requirements.txt` is in the "
     "ROOT of your GitHub repo (same folder as app.py), is named exactly `requirements.txt`, "
@@ -315,6 +337,19 @@ def render_results(result: dict) -> None:
 
 def main() -> None:
     st.set_page_config(page_title="ATS Resume Checker", page_icon="📄", layout="wide")
+    missing = missing_packages()
+    if missing:
+        st.error(
+            "Missing packages: " + ", ".join(missing) + ". Add each one on its own line to "
+            "`requirements.txt` in the root of your GitHub repo, commit, then reboot the app "
+            "from 'Manage app'."
+        )
+        st.code(
+            "streamlit>=1.40.0\ngoogle-genai>=1.0.0\npypdf>=5.0.0\npython-docx>=1.1.0",
+            language="text",
+        )
+        st.stop()
+
     st.title("📄 ATS Resume Checker")
     st.caption("Upload your resume to get an estimated ATS score and concrete ways to improve it.")
 
