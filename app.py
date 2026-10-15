@@ -13,10 +13,8 @@ import os
 import re
 
 import streamlit as st
-from docx import Document
-from google import genai
-from google.genai import types
-from pypdf import PdfReader
+# docx, pypdf and google-genai are imported lazily (inside the functions that use them)
+# so a missing dependency shows a clear message in the app instead of a crash.
 
 # --------------------------------------------------------------------------- #
 # Configuration
@@ -25,6 +23,14 @@ DEFAULT_MODEL = "gemini-2.5-flash"  # override with GEMINI_MODEL (secret/env) or
 MAX_FILE_MB = 5
 MAX_CHARS = 30_000  # resume text sent to the model (keeps cost and latency low)
 MIN_CHARS = 200  # below this we assume the file has no readable text
+
+
+MISSING_DEPS_MSG = (
+    "A required package is not installed ({err}). Make sure `requirements.txt` is in the "
+    "ROOT of your GitHub repo (same folder as app.py), is named exactly `requirements.txt`, "
+    "is saved as UTF-8, contains streamlit, google-genai, pypdf and python-docx, then reboot "
+    "the app from 'Manage app'."
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -45,6 +51,8 @@ def get_config(name: str, default: str = "") -> str:
 # Helpers: text extraction
 # --------------------------------------------------------------------------- #
 def extract_pdf(data: bytes) -> str:
+    from pypdf import PdfReader
+
     reader = PdfReader(io.BytesIO(data))
     if reader.is_encrypted:
         try:
@@ -55,6 +63,8 @@ def extract_pdf(data: bytes) -> str:
 
 
 def extract_docx(data: bytes) -> str:
+    from docx import Document  # provided by the `python-docx` package
+
     doc = Document(io.BytesIO(data))
     parts = [p.text for p in doc.paragraphs]
     for table in doc.tables:  # many resume templates put content in tables
@@ -228,6 +238,8 @@ def parse_analysis(raw: str) -> dict:
 
 def analyze_resume(client, model: str, resume_text: str, job_description: str = "") -> dict:
     """Call Gemini and return the parsed analysis dict."""
+    from google.genai import types
+
     response = client.models.generate_content(
         model=model,
         contents=build_prompt(resume_text, job_description),
@@ -337,6 +349,9 @@ def main() -> None:
 
         try:
             resume_text = extract_text(uploaded.name, uploaded.getvalue())
+        except ImportError as exc:
+            st.error(MISSING_DEPS_MSG.format(err=exc))
+            return
         except Exception as exc:
             st.error(f"Could not read the file: {exc}")
             return
@@ -350,9 +365,14 @@ def main() -> None:
             return
 
         try:
+            from google import genai
+
             with st.spinner("Analyzing your resume..."):
                 client = genai.Client(api_key=api_key)
                 result = analyze_resume(client, model.strip() or DEFAULT_MODEL, resume_text, job_description)
+        except ImportError as exc:
+            st.error(MISSING_DEPS_MSG.format(err=exc))
+            return
         except ValueError as exc:  # unusable model output
             st.error(f"{exc} Please try again.")
             return
